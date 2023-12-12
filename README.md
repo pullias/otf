@@ -1,9 +1,7 @@
-# otf
-A utility for pulling data from your Orange Theory account for better data analysis
+# OTF
+Based off the work by `/u/fireislander` on Reddit.
 
-* Install `requests` library. `pip3 install requests`
-* Update lines 4 and 5 with your OTF email and password
-* `python3 main.py`
+A utility for pulling data from your Orange Theory account for better data analysis
 
 ### This script will currently display
 * \# of classes by coach
@@ -25,13 +23,3 @@ A utility for pulling data from your Orange Theory account for better data analy
 * Average time in each HR zone
 
 The script currently makes a lot of assumptions about what data will be available. Since I only had access to my account I was able to make those assumptions, but some folks had different data that didn't quite match mine, or had data missing. 
-
-Please create an issue on GitHub or [DM me on reddit](https://www.reddit.com/message/compose/?to=/u/fireislander) with any errors/findings/suggestions
-
-
-### To do (in no particular order):
-* Create postman collection to better explore data and make more easily available
-* Identify data assumptions and handle errors arising from them
-* Pull challenge/benchmark data/progression
-* Learn `pandas` for better data processing
-* Make pretty graphs
