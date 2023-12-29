@@ -3,10 +3,12 @@ import json
 
 from getpass import getpass
 
+import mistune
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from pprint import pprint
+import plotly.graph_objects as go
+import plotly.io as pio
 
 def get_credentials():
     """
@@ -132,6 +134,38 @@ def extract_member_data(json_response):
     member_data["Max HR"] = str(json_response['maxHr'])
     return member_data
 
+def extract_zones_splats_calories(json_response):
+    """
+    Extracts the second level zone data, splats per class, and calories
+    """
+    seconds_in_zone_splats_calories = {
+        "black": [],
+        "blue": [],
+        "green": [],
+        "orange": [],
+        "red": [],
+        "splats": [],
+        "calories": [],
+        "max_hr": [],
+        "date": []
+    }
+    for workout in json_response["data"]:
+        seconds_in_zone_splats_calories["black"].append(workout["blackZoneTimeSecond"])
+        seconds_in_zone_splats_calories["blue"].append(workout["blueZoneTimeSecond"])
+        seconds_in_zone_splats_calories["green"].append(workout["greenZoneTimeSecond"])
+        seconds_in_zone_splats_calories["orange"].append(workout["orangeZoneTimeSecond"])
+        seconds_in_zone_splats_calories["red"].append(workout["redZoneTimeSecond"])
+        seconds_in_zone_splats_calories["splats"].append(workout["totalSplatPoints"])
+        seconds_in_zone_splats_calories["calories"].append(workout["totalCalories"])
+        seconds_in_zone_splats_calories["max_hr"].append(workout["maxHr"])
+        seconds_in_zone_splats_calories["date"].append(workout["classDate"])
+    
+    # Get our data into a dataframe and return for further analysis
+    df = pd.DataFrame.from_dict(seconds_in_zone_splats_calories)
+    df["timestamp"] = pd.to_datetime(df["date"])
+
+    return df
+
 def segment_starting_station(heartrate_arr, cutoff):
     """
     Convert the array into a pandas dataframe, then segment into data where we believe the 
@@ -179,91 +213,132 @@ def plot_heartrate_over_time(df, title=""):
     fig = px.line(
         df_summary, 
         x=df_summary.index, 
-        y=["mean","25%","75%"], 
+        y=["mean"], 
         title=f"{title}:{num_classes}",
     )
-    fig.show()
+    fig.add_trace(go.Scatter(
+        x=df_summary.index, 
+        y=df_summary["25%"], 
+        fill='tonexty', 
+        fillcolor='rgba(25,36,181,0.2)',                 
+        line=dict(color='rgba(255,255,255,0)'),
+        name='25th percentile')
+    )
+    fig.add_trace(go.Scatter(
+        x=df_summary.index, 
+        y=df_summary["75%"], 
+        fill='tonexty', 
+        fillcolor='rgba(32,46,245,0.2)',
+        line=dict(color='rgba(255,255,255,0)'),
+        name='75th percentile')
+    )
+    fig.update_layout(
+        xaxis_title='Minutes into Class (min)',
+        yaxis_title='Heart Rate (BPM)'
+    )
+    return fig
 
-def plot_bar_chart(dictionary, title=""):
+def plot_bar_chart(dictionary, title="", xaxis_title="", yaxis_title=""):
     """
     Takes any of the arbitrary dictionaries and plots them as bar plot
     """
     fig = px.bar(x=dictionary.keys(), y=dictionary.values(), title=title)
-    fig.show()
+    if xaxis_title:
+        fig.update_layout(xaxis_title=xaxis_title)
+    if yaxis_title:
+        fig.update_layout(yaxis_title=yaxis_title)
+    return fig
+
+def markdown_to_html(template_str, output_file):
+    """
+    Create an HTML output from our templated markdown
+    """
+    # Convert Markdown to HTML
+    html = mistune.markdown(template_str, escape=False)
+
+    # Write the HTML content to the output file
+    with open(output_file, 'w') as f:
+        f.write(html)
 
 if __name__ == "__main__":
-    from pprint import pprint
 
     workout_data_json, member_data_json = get_workout_data(*get_credentials())
     usable_minute_by_minutes, cutoff = extract_minute_by_minute_data(workout_data_json)
     df_tread_to_start, df_row_to_start = segment_starting_station(usable_minute_by_minutes, cutoff)
-    plot_heartrate_over_time(df_tread_to_start, "Tread Start Heartrate Progressionn<br>Num Classes")
-    plot_heartrate_over_time(df_row_to_start, "Row Start Heartrate Progressionn<br>Num Classes")
+    tread_start_plot = plot_heartrate_over_time(df_tread_to_start, "Average Tread Start Heartrate Progressionn<br>Num Classes")
+    tread_start_plot = pio.to_html(tread_start_plot, include_plotlyjs=True, full_html=False)
     
+    row_start_plot = plot_heartrate_over_time(df_row_to_start, "Average Row Start Heartrate Progressionn<br>Num Classes")
+    row_start_plot = row_start_plot.to_html(full_html=False)
+
     data = extract_member_data(member_data_json)
-    pprint(data)
+    class_count = data["Total classes attended"]
 
     data = extract_class_coach_data(workout_data_json)
-    plot_bar_chart(data, "Class By Coach")
+    class_by_coach_plot = plot_bar_chart(data, "Class By Coach (It's okay, everyone has favorites!)", xaxis_title="Coach", yaxis_title="Classes Taken (#)")
+    class_by_coach_plot = class_by_coach_plot.to_html(full_html=False)
 
     data = extract_class_type_data(workout_data_json)
-    plot_bar_chart(data, "Class By Type")
+    class_by_type_plot = plot_bar_chart(data, "Class By Type (When was your last 90 min or Tornado?!)", xaxis_title="Class Type", yaxis_title="Classes Taken (#)")
+    class_by_type_plot = class_by_type_plot.to_html(full_html=False)
 
+    df_class_data = extract_zones_splats_calories(workout_data_json)
+    df_class_data = df_class_data[df_class_data["timestamp"] > pd.to_datetime("2023-01-01 00:00:00+00:00")]
+    df_class_data = df_class_data[df_class_data["timestamp"] < pd.to_datetime("2024-01-01 00:00:00+00:00")]
+
+    # Let's see what week we had the most classes
+    # Set 'timestamp' as the index
+    df_class_data.set_index('timestamp', inplace=True)
+
+    # Resample on a weekly basis and get counts
+    weekly_counts = df_class_data.resample('W').size()
+
+    # Convert the series to a DataFrame
+    weekly_counts_df = pd.DataFrame(weekly_counts, columns=['count'])
+
+    # Find the timestamp where the max count occurs
+    max_count_timestamp = weekly_counts.idxmax()
+    max_count_value = weekly_counts.loc[max_count_timestamp]
+
+    # Get the corresponding row from the original DataFrame
+    max_count_row = weekly_counts_df.loc[weekly_counts_df.index.isin([max_count_timestamp])]
+
+    # See what's the most calories, splats, and peak HR you had
+    max_splats = df_class_data["splats"].max()
+    max_calories = df_class_data["calories"].max()
+    total_calories = df_class_data["calories"].sum()
+    max_hr = df_class_data["max_hr"].max()
+
+    # Calculate out number of minutes spent in each zone
+    df_zone_data = df_class_data[["black", "blue", "green", "orange", "red"]]
+    df_zone_data = df_zone_data/60.0
+    df_zone_data = df_zone_data.sum(axis=0)
+    minutes_in_zone_plot = plot_bar_chart(df_zone_data.to_dict(), "Minutes in Each Zone (Where did you spend the most time?)", xaxis_title="Zone", yaxis_title="Minutes (min)")
+    minutes_in_zone_plot = minutes_in_zone_plot.to_html(full_html=False)
+
+    with open("template.md", "r") as f:
+        template_str = f.read()
+    template_str = template_str.replace("{row_start_plot}", row_start_plot)
+    template_str = template_str.replace("{tread_start_plot}", tread_start_plot)
+    template_str = template_str.replace("{minutes_in_zone_plot}", minutes_in_zone_plot)
+    template_str = template_str.replace("{total_calories}", str(total_calories))
+    template_str = template_str.replace("{max_calories}", str(max_calories))
+    template_str = template_str.replace("{max_splats}", str(max_splats))
+    template_str = template_str.replace("{max_hr}", str(max_hr))
+    template_str = template_str.replace("{class_by_type_plot}", class_by_type_plot)
+    template_str = template_str.replace("{max_count_timestamp}", str(max_count_timestamp)[:10])
+    template_str = template_str.replace("{max_count_value}", str(max_count_value))
+    template_str = template_str.replace("{class_by_coach_plot}", class_by_coach_plot)
+    template_str = template_str.replace("{class_count}", str(class_count))
+
+    # Replace 'input.md' and 'output.html' with your file names
+    markdown_to_html(template_str, 'otf_wrapped.html')
 
     # Get the derivative of your heart rate at each point in the workout. Since our delta_t = 1 diff will work just fine
     first_deriv_arr = np.diff(usable_minute_by_minutes, 1, axis=1)
 
     # Values of 1 indicate regions where the heart rate increases, 0 are decreases
     heart_rate_increasing_decreasing_mask = np.diff(usable_minute_by_minutes) < 0
+
     
-# # Code from Original Work
-
-# hrTotals = {}
-# minCount = {}
-# secsInZone = {"Red": 0, "Orange": 0, "Green": 0, "Blue": 0, "Black": 0}
-# dataClassCounter = 0
-# maxHrAverageTotal = 0
-# averageHrTotal = 0
-# averageSplatsTotal = 0
-# averageCaloriesTotal = 0
-# for workout in inStudioResponse_json['data']:
-#     dataClassCounter = dataClassCounter + 1
-#     count = 1
-#     if 'minuteByMinuteHr' in workout and workout['minuteByMinuteHr'] is not None:
-#         for hr in workout['minuteByMinuteHr'].split("[")[1].split("]")[0].split(","):
-#             if count in hrTotals:
-#                 hrTotals[count] = int(hrTotals[count]) + int(hr)
-#             else:
-#                 hrTotals[count] = int(hr)
-#             if count in minCount:
-#                 minCount[count] = minCount[count] + 1
-#             else:
-#                 minCount[count] = 1
-#             count = count + 1
-#     secsInZone['Red'] = secsInZone['Red'] +workout['redZoneTimeSecond']
-#     secsInZone['Orange'] = secsInZone['Orange'] + workout['orangeZoneTimeSecond']
-#     secsInZone['Green'] = secsInZone['Green'] + workout['greenZoneTimeSecond']
-#     secsInZone['Blue'] = secsInZone['Blue'] + workout['blueZoneTimeSecond']
-#     secsInZone['Black'] = secsInZone['Black'] + workout['blackZoneTimeSecond']
-#     maxHrAverageTotal = maxHrAverageTotal + workout['maxHr']
-#     averageHrTotal = averageHrTotal + workout['avgHr']
-#     averageSplatsTotal = averageSplatsTotal + workout['totalSplatPoints']
-#     averageCaloriesTotal = averageCaloriesTotal + workout['totalCalories']
-
-# print("The remainder of the data is based on workout summaries available. You have " + str(dataClassCounter) + " workouts with data available")
-# print("Average Max HR: " + str(maxHrAverageTotal / dataClassCounter))
-# print("Average HR: " + str(averageHrTotal / dataClassCounter))
-# print("Average Splats: " + str(averageSplatsTotal / dataClassCounter))
-# print("Average calorie burn: "+ str(averageCaloriesTotal / dataClassCounter))
-
-# print("Average HR by Min:")
-# for min in minCount:
-#     average = hrTotals[min] / minCount[min]
-#     stringBuilder = str(min)+": "+str(average)
-#     print(stringBuilder)
-# print("Average time in each zone (Mins)")
-# print("Red: "+str(secsInZone['Red']/dataClassCounter/60))
-# print("Orange: "+str(secsInZone['Orange']/dataClassCounter/60))
-# print("Green: "+str(secsInZone['Green']/dataClassCounter/60))
-# print("Blue: "+str(secsInZone['Blue']/dataClassCounter/60))
-# print("Black: "+str(secsInZone['Black']/dataClassCounter/60))
+    

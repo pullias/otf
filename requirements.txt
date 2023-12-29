@@ -1,0 +1,4 @@
+mistune
+pandas
+numpy
+plotly
