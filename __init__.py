@@ -257,7 +257,7 @@ def markdown_to_html(template_str, output_file):
     html = mistune.markdown(template_str, escape=False)
 
     # Write the HTML content to the output file
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding='utf-8') as f:
         f.write(html)
 
 if __name__ == "__main__":

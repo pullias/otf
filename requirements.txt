@@ -2,3 +2,4 @@ mistune
 pandas
 numpy
 plotly
+requests
