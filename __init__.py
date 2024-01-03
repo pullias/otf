@@ -66,11 +66,12 @@ def extract_minute_by_minute_data(json_response, cutoff_percentile=0.1):
     hr_data = []
     for item in json_response['data']:
         try:
-            # Security hole
-            hr_as_lst = eval(item["minuteByMinuteHr"])
-            num_mins = len(hr_as_lst)
-            num_mins_in_class.append(num_mins)
-            hr_data.append(hr_as_lst)
+            if item["minuteByMinuteHr"]:
+                # Security hole
+                hr_as_lst = eval(item["minuteByMinuteHr"])
+                num_mins = len(hr_as_lst)
+                num_mins_in_class.append(num_mins)
+                hr_data.append(hr_as_lst)
         except KeyError:
             print(item.keys())
 
